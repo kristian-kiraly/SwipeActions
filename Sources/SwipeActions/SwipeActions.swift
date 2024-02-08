@@ -98,34 +98,36 @@ fileprivate struct SwipeActionModifier: ViewModifier {
     
     @ViewBuilder
     private var swipeActionButtons: some View {
-        HStack(spacing: 0) {
-            Spacer()
-            ForEach(Array(swipeActions.indices).reversed(), id:\.self) { swipeActionIndex in
-                let swipeAction = swipeActions[swipeActionIndex]
-                Text(swipeAction.name)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, SwipeAction.horizontalPadding)
-                    .frame(maxHeight: .infinity, alignment: .center)
-                    .background {
-                        swipeAction.backgroundColor
-                    }
-                    .onTapGesture {
-                        commitSwipeAction(swipeAction)
-                    }
+        if self.offset.totalWidth < 0 {
+            HStack(spacing: 0) {
+                Spacer()
+                ForEach(Array(swipeActions.indices).reversed(), id:\.self) { swipeActionIndex in
+                    let swipeAction = swipeActions[swipeActionIndex]
+                    Text(swipeAction.name)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, SwipeAction.horizontalPadding)
+                        .frame(maxHeight: .infinity, alignment: .center)
+                        .background {
+                            swipeAction.backgroundColor
+                        }
+                        .onTapGesture {
+                            commitSwipeAction(swipeAction)
+                        }
+                }
             }
-        }
-        .background {
-            if let swipeAction = swipeActions.last {
-                GeometryReader { geo in
-                    HStack(spacing: 0) {
-                        Spacer()
-                        swipeAction.backgroundColor
-                            .frame(width: geo.size.width / (self.offset.current.width + self.offset.stored.width < -swipeAction.width - SwipeAction.bounceWidth ? 1 : 2), height: geo.size.height)
+            .background {
+                if let swipeAction = swipeActions.last {
+                    GeometryReader { geo in
+                        HStack(spacing: 0) {
+                            Spacer()
+                            swipeAction.backgroundColor
+                                .frame(width: geo.size.width / (self.offset.current.width + self.offset.stored.width < -swipeAction.width - SwipeAction.bounceWidth ? 1 : 2), height: geo.size.height)
+                        }
                     }
                 }
             }
+            .opacity(self.offset.stored.width < -totalWidth - SwipeAction.bounceWidth ? 0 : 1)
         }
-        .opacity(self.offset.stored.width < -totalWidth - SwipeAction.bounceWidth ? 0 : 1)
     }
     
     private var totalWidth: CGFloat {
