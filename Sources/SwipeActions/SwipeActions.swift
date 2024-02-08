@@ -171,6 +171,19 @@ public struct SwipeAction: Identifiable {
     public static let commitWidth: CGFloat = 1000
     public static let horizontalPadding: CGFloat = 17
     
+    public init(name: String, action: @escaping () -> (), backgroundColor: Color) {
+        self.name = name
+        self.action = action
+        self.backgroundColor = backgroundColor
+    }
+    
+    internal init(name: String, action: @escaping () -> (), backgroundColor: Color, bouncesBack: Bool = true) {
+        self.name = name
+        self.action = action
+        self.backgroundColor = backgroundColor
+        self.bouncesBack = bouncesBack
+    }
+    
     public static func DeleteAction(_ action: @escaping () -> ()) -> SwipeAction {
         SwipeAction(name: "Delete", action: action, backgroundColor: .red, bouncesBack: false)
     }
