@@ -63,7 +63,13 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                         self.offset.current = gesture.translation
                         if self.offset.totalWidth > SwipeAction.bounceWidth { //if the width is too far off the right side of the screen, stop it and bounce back
                             self.offset.current.width = SwipeAction.bounceWidth - self.offset.stored.width //set the current width to the bounce distance minus the stored width to get the totalWidth to be the bounceWidth
-                        } else if self.offset.totalWidth < -totalWidth && oldValue.totalWidth >= -totalWidth {
+                        //If the user drags past the end of the buttons (If the total offset width is past the end of the width of the button options and the previous value was at or before that width)
+                        //OR
+                        //If the user drags back to the other side of the buttons (If the total offset width is before the end of the width of the button options and the previous value was at or past that width)
+                        } else if self.offset.totalWidth < -totalWidth && oldValue.totalWidth >= -totalWidth
+                                    ||
+                                    self.offset.totalWidth > -totalWidth && oldValue.totalWidth <= -totalWidth
+                        {
                             let selectionGenerator = UISelectionFeedbackGenerator()
                             selectionGenerator.prepare()
                             selectionGenerator.selectionChanged()
