@@ -57,7 +57,7 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                 swipeActionButtons
             }
             .gesture(
-                DragGesture(minimumDistance: 1, coordinateSpace: .local)
+                DragGesture(minimumDistance: 10, coordinateSpace: .local)
                     .onChanged { gesture in
                         let oldValue = self.offset
                         self.offset.current = gesture.translation
