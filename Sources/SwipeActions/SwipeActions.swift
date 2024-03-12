@@ -43,6 +43,8 @@ fileprivate struct SwipeActionModifier: ViewModifier {
     let swipeActions: [SwipeAction]
     @State private var offset = Offset()
     
+    @GestureState private var dragOffset: CGSize = .zero
+    
     func body(content: Content) -> some View {
         content
             .contentShape(Rectangle())
@@ -58,48 +60,52 @@ fileprivate struct SwipeActionModifier: ViewModifier {
             }
             .gesture(
                 DragGesture(minimumDistance: 10, coordinateSpace: .local)
-                    .onChanged { gesture in
-                        let oldValue = self.offset
-                        self.offset.current = gesture.translation
-                        if self.offset.totalWidth > SwipeAction.bounceWidth { //if the width is too far off the right side of the screen, stop it and bounce back
-                            self.offset.current.width = SwipeAction.bounceWidth - self.offset.stored.width //set the current width to the bounce distance minus the stored width to get the totalWidth to be the bounceWidth
-                        //If the user drags past the end of the buttons (If the total offset width is past the end of the width of the button options and the previous value was at or before that width)
-                        //OR
-                        //If the user drags back to the other side of the buttons (If the total offset width is before the end of the width of the button options and the previous value was at or past that width)
-                        } else if self.offset.totalWidth < -totalWidth && oldValue.totalWidth >= -totalWidth
-                                    ||
-                                    self.offset.totalWidth > -totalWidth && oldValue.totalWidth <= -totalWidth
-                        {
-                            let selectionGenerator = UISelectionFeedbackGenerator()
-                            selectionGenerator.prepare()
-                            selectionGenerator.selectionChanged()
-                        }
-                    }
-                    .onEnded { _ in
-                        guard let lastAction = swipeActions.last else { return }
-                        if self.offset.totalWidth < -totalWidth + -SwipeAction.bounceWidth {
-                            commitSwipeAction(lastAction)
-                            return
-                        }
-                        defer {
-                            self.offset.current.width = 0
-                        }
-                        if self.offset.totalWidth >= 0 {
-                            self.offset.stored.width = 0
-                            return
-                        }
-                        var currentPosition: CGFloat = 0
-                        for swipeAction in swipeActions {
-                            if self.offset.totalWidth > -(swipeAction.width / 2) - currentPosition {
-                                self.offset.stored.width = -currentPosition
-                                return
-                            }
-                            currentPosition += swipeAction.width
-                        }
-                        self.offset.stored.width = -currentPosition
-                    }
+                    .updating($dragOffset, body: { value, state, transaction in
+                        state = value.translation
+                    })
             )
             .animation(.default, value: offset)
+            .onChange(of: dragOffset) { newValue in
+                if newValue == .zero {
+                    guard let lastAction = swipeActions.last else { return }
+                    if self.offset.totalWidth < -totalWidth + -SwipeAction.bounceWidth {
+                        commitSwipeAction(lastAction)
+                        return
+                    }
+                    defer {
+                        self.offset.current.width = 0
+                    }
+                    if self.offset.totalWidth >= 0 {
+                        self.offset.stored.width = 0
+                        return
+                    }
+                    var currentPosition: CGFloat = 0
+                    for swipeAction in swipeActions {
+                        if self.offset.totalWidth > -(swipeAction.width / 2) - currentPosition {
+                            self.offset.stored.width = -currentPosition
+                            return
+                        }
+                        currentPosition += swipeAction.width
+                    }
+                    self.offset.stored.width = -currentPosition
+                } else {
+                    let oldValue = self.offset
+                    self.offset.current = newValue
+                    if self.offset.totalWidth > SwipeAction.bounceWidth { //if the width is too far off the right side of the screen, stop it and bounce back
+                        self.offset.current.width = SwipeAction.bounceWidth - self.offset.stored.width //set the current width to the bounce distance minus the stored width to get the totalWidth to be the bounceWidth
+                    //If the user drags past the end of the buttons (If the total offset width is past the end of the width of the button options and the previous value was at or before that width)
+                    //OR
+                    //If the user drags back to the other side of the buttons (If the total offset width is before the end of the width of the button options and the previous value was at or past that width)
+                    } else if self.offset.totalWidth < -totalWidth && oldValue.totalWidth >= -totalWidth
+                                ||
+                                self.offset.totalWidth > -totalWidth && oldValue.totalWidth <= -totalWidth
+                    {
+                        let selectionGenerator = UISelectionFeedbackGenerator()
+                        selectionGenerator.prepare()
+                        selectionGenerator.selectionChanged()
+                    }
+                }
+            }
     }
     
     @ViewBuilder
