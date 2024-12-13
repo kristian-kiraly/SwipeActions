@@ -46,31 +46,40 @@ fileprivate struct SwipeActionModifier: ViewModifier {
     @GestureState private var dragOffset: CGSize = .zero
     
     func body(content: Content) -> some View {
+        let fullWidth = offset.current.width + offset.stored.width
         content
             .contentShape(Rectangle())
-            .background {
-                GeometryReader { geo in
-                    Color(UIColor.systemBackground)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                }
-            }
             .offset(x: offset.current.width + offset.stored.width)
             .background {
                 swipeActionButtons
+                    .mask {
+                        GeometryReader { geo in
+//                            if fullWidth < 0 {
+                            let maskWidth = fullWidth < 0 ? -fullWidth : 0
+                            Rectangle()
+                                .frame(width: maskWidth, height: geo.size.height, alignment: .trailing)
+                                .position(x: geo.size.width - (maskWidth / 2), y: geo.size.height / 2)
+//                            }
+                        }
+                    }
             }
+            .animation(.default, value: offset)
             .gesture(
                 DragGesture(minimumDistance: 10, coordinateSpace: .local)
                     .updating($dragOffset, body: { value, state, transaction in
                         state = value.translation
                     })
             )
-            .animation(.default, value: offset)
             .onChange(of: dragOffset) { newValue in
                 if newValue == .zero {
                     guard let lastAction = swipeActions.last else { return }
                     if self.offset.totalWidth < -totalWidth + -SwipeAction.bounceWidth {
-                        commitSwipeAction(lastAction)
-                        return
+                        commitSwipeAction(lastAction, byDrag: true)
+                        if case .stop = lastAction.continuationBehavior {
+                            
+                        } else {
+                            return
+                        }
                     }
                     defer {
                         self.offset.current.width = 0
@@ -79,15 +88,24 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                         self.offset.stored.width = 0
                         return
                     }
-                    var currentPosition: CGFloat = 0
-                    for swipeAction in swipeActions {
-                        if self.offset.totalWidth > -(swipeAction.width / 2) - currentPosition {
-                            self.offset.stored.width = -currentPosition
-                            return
-                        }
-                        currentPosition += swipeAction.width
+                    //Code to bounce to individual actions
+//                    var currentPosition: CGFloat = 0
+//                    for swipeAction in swipeActions {
+//                        if self.offset.totalWidth > -(swipeAction.width / 2) - currentPosition {
+//                            self.offset.stored.width = -currentPosition
+//                            return
+//                        }
+//                        currentPosition += swipeAction.width
+//                    }
+//                    self.offset.stored.width = -currentPosition
+                    if self.offset.current.width < 0 {
+                        let fullSwipeActionWidth: CGFloat = swipeActions.reduce(0) { $0 + $1.width }
+                        self.offset.stored.width = -fullSwipeActionWidth
+//                        print("Open: \(self.offset.current)")
+                    } else {
+                        self.offset.stored.width = 0
+//                        print("Close: \(self.offset.current)")
                     }
-                    self.offset.stored.width = -currentPosition
                 } else {
                     let oldValue = self.offset
                     self.offset.current = newValue
@@ -96,13 +114,13 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                     //If the user drags past the end of the buttons (If the total offset width is past the end of the width of the button options and the previous value was at or before that width)
                     //OR
                     //If the user drags back to the other side of the buttons (If the total offset width is before the end of the width of the button options and the previous value was at or past that width)
-                    } else if self.offset.totalWidth < -totalWidth && oldValue.totalWidth >= -totalWidth
-                                ||
-                                self.offset.totalWidth > -totalWidth && oldValue.totalWidth <= -totalWidth
-                    {
-                        let selectionGenerator = UISelectionFeedbackGenerator()
-                        selectionGenerator.prepare()
-                        selectionGenerator.selectionChanged()
+//                    } else if self.offset.totalWidth < -totalWidth && oldValue.totalWidth >= -totalWidth
+//                                ||
+//                                self.offset.totalWidth > -totalWidth && oldValue.totalWidth <= -totalWidth
+//                    {
+//                        let selectionGenerator = UISelectionFeedbackGenerator()
+//                        selectionGenerator.prepare()
+//                        selectionGenerator.selectionChanged()
                     }
                 }
             }
@@ -110,36 +128,29 @@ fileprivate struct SwipeActionModifier: ViewModifier {
     
     @ViewBuilder
     private var swipeActionButtons: some View {
-        if self.offset.totalWidth < 0 {
-            HStack(spacing: 0) {
-                Spacer()
-                ForEach(Array(swipeActions.indices).reversed(), id:\.self) { swipeActionIndex in
-                    let swipeAction = swipeActions[swipeActionIndex]
-                    Text(swipeAction.name)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, SwipeAction.horizontalPadding)
-                        .frame(maxHeight: .infinity, alignment: .center)
-                        .background {
-                            swipeAction.backgroundColor
-                        }
-                        .onTapGesture {
-                            commitSwipeAction(swipeAction)
-                        }
-                }
-            }
-            .background {
-                if let swipeAction = swipeActions.last {
-                    GeometryReader { geo in
-                        HStack(spacing: 0) {
-                            Spacer()
-                            swipeAction.backgroundColor
-                                .frame(width: geo.size.width / (self.offset.current.width + self.offset.stored.width < -swipeAction.width - SwipeAction.bounceWidth ? 1 : 2), height: geo.size.height)
-                        }
+        let isBeyondSwipeDistance = self.offset.stored.width < -totalWidth - SwipeAction.bounceWidth
+        HStack(spacing: 0) {
+            Spacer()
+            ForEach(Array(swipeActions.indices).reversed(), id:\.self) { swipeActionIndex in
+                let swipeAction = swipeActions[swipeActionIndex]
+                Text(swipeAction.name)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, SwipeAction.horizontalPadding)
+                    .frame(maxHeight: .infinity, alignment: .center)
+                    .background {
+                        swipeAction.backgroundColor
                     }
-                }
+                    .onTapGesture {
+                        commitSwipeAction(swipeAction, byDrag: false)
+                    }
             }
-            .opacity(self.offset.stored.width < -totalWidth - SwipeAction.bounceWidth ? 0 : 1)
         }
+        .background {
+            if let swipeAction = swipeActions.last {
+                swipeAction.backgroundColor
+            }
+        }
+        .opacity(isBeyondSwipeDistance ? 0 : 1)
     }
     
     private var totalWidth: CGFloat {
@@ -148,14 +159,19 @@ fileprivate struct SwipeActionModifier: ViewModifier {
         }
     }
     
-    private func commitSwipeAction(_ swipeAction: SwipeAction) {
+    private func commitSwipeAction(_ swipeAction: SwipeAction, byDrag: Bool) {
         let impactGenerator = UIImpactFeedbackGenerator()
         impactGenerator.prepare()
         impactGenerator.impactOccurred()
-        if swipeAction.bouncesBack {
-            self.offset.stored.width = 0
-            swipeAction.action()
-        } else {
+        switch swipeAction.continuationBehavior {
+        case .commit:
+            if byDrag {
+                self.offset.current = .zero
+                self.offset.stored.width = 0
+                swipeAction.action()
+            }
+        case .stop: break
+        case .delete:
             self.offset.stored.width = -SwipeAction.commitWidth
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 swipeAction.action()
@@ -165,6 +181,8 @@ fileprivate struct SwipeActionModifier: ViewModifier {
 }
 
 public extension View {
+#warning("Applying multiple swipe actions only uses the first swipe action modifier used")
+    
     func addSwipeAction(_ action: SwipeAction) -> some View {
         self.modifier(SwipeActionModifier(swipeActions: [action]))
     }
@@ -174,12 +192,18 @@ public extension View {
     }
 }
 
+public enum SwipeContinuationBehavior {
+    case stop
+    case commit
+    case delete
+}
+
 public struct SwipeAction: Identifiable {
     public let id = UUID()
     public var name: String
     public var action: () -> ()
     public var backgroundColor: Color
-    private(set) var bouncesBack = true
+    private(set) var continuationBehavior: SwipeContinuationBehavior = .stop
     
     public static let bounceWidth: CGFloat = 50
     public static let commitWidth: CGFloat = 1000
@@ -191,11 +215,15 @@ public struct SwipeAction: Identifiable {
         self.backgroundColor = backgroundColor
     }
     
-    internal init(name: String, action: @escaping () -> (), backgroundColor: Color, bouncesBack: Bool = true) {
+    internal init(name: String, action: @escaping () -> (), backgroundColor: Color, continuationBehavior: SwipeContinuationBehavior = .stop) {
         self.name = name
         self.action = action
         self.backgroundColor = backgroundColor
-        self.bouncesBack = bouncesBack
+        self.continuationBehavior = continuationBehavior
+    }
+    
+    internal init(name: String, action: @escaping () -> (), backgroundColor: Color, bouncesBack: Bool = false) {
+        self.init(name: name, action: action, backgroundColor: backgroundColor, continuationBehavior: .commit)
     }
     
     public static func DeleteAction(_ action: @escaping () -> ()) -> SwipeAction {
@@ -204,5 +232,15 @@ public struct SwipeAction: Identifiable {
     
     public var width: CGFloat {
         name.renderedWidth + Self.horizontalPadding * 2
+    }
+}
+
+
+#Preview {
+    ForEach(0..<10, id: \.self) { index in
+        Text("\(index)")
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .addSwipeActions([.init(name: "Test", action: { print("Test") }, backgroundColor: .blue), .init(name: "Test 2", action: { print ("Test 2") }, backgroundColor: .green)])
     }
 }
