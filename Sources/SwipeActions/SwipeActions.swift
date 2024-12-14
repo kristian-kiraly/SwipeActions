@@ -39,11 +39,16 @@ fileprivate extension String {
     }
 }
 
+fileprivate struct DragGestureStorage: Equatable {
+    var dragOffset: CGSize
+    var predictedDragEnd: CGSize
+}
+
 fileprivate struct SwipeActionModifier: ViewModifier {
     let swipeActions: SwipeActionGroup
     @State private var offset = Offset()
     
-    @GestureState private var dragOffset: CGSize = .zero
+    @GestureState private var gestureState: DragGestureStorage = .init(dragOffset: .zero, predictedDragEnd: .zero)
     
     func body(content: Content) -> some View {
         let fullWidth = offset.current.width + offset.stored.width
@@ -54,24 +59,22 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                 swipeActionButtons
                     .mask {
                         GeometryReader { geo in
-//                            if fullWidth < 0 {
                             let maskWidth = fullWidth < 0 ? -fullWidth : 0
                             Rectangle()
                                 .frame(width: maskWidth, height: geo.size.height, alignment: .trailing)
                                 .position(x: geo.size.width - (maskWidth / 2), y: geo.size.height / 2)
-//                            }
                         }
                     }
             }
             .animation(.default, value: offset)
             .gesture(
                 DragGesture(minimumDistance: 10, coordinateSpace: .local)
-                    .updating($dragOffset, body: { value, state, transaction in
-                        state = value.translation
+                    .updating($gestureState, body: { value, state, transaction in
+                        state = .init(dragOffset: value.translation, predictedDragEnd: value.predictedEndTranslation)
                     })
             )
-            .onChange(of: dragOffset) { newValue in
-                if newValue == .zero {
+            .onChange(of: gestureState) { [oldValue=gestureState] newValue in
+                if newValue.dragOffset == .zero {
                     if self.offset.totalWidth < -totalWidth + -SwipeAction.bounceWidth {
                         guard case .stop = swipeActions.continuationBehavior else {
                             commitSwipeAction(swipeActions.mainAction, byDrag: true)
@@ -95,18 +98,17 @@ fileprivate struct SwipeActionModifier: ViewModifier {
 //                        currentPosition += swipeAction.width
 //                    }
 //                    self.offset.stored.width = -currentPosition
-                    if self.offset.current.width < 0 {
+                    let rightDrag = oldValue.predictedDragEnd.width > oldValue.dragOffset.width
+                    if !rightDrag {
                         let fullSwipeActionWidth: CGFloat = swipeActions.allActions.reduce(0) { $0 + $1.width }
                         self.offset.stored.width = -fullSwipeActionWidth
-//                        print("Open: \(self.offset.current)")
                     } else {
                         self.offset.stored.width = 0
-//                        print("Close: \(self.offset.current)")
                     }
                 } else {
                     let oldValue = self.offset
                     let totalTargetWidth = -totalWidth - SwipeAction.bounceWidth
-                    self.offset.current = newValue
+                    self.offset.current = newValue.dragOffset
                     if self.offset.totalWidth > SwipeAction.bounceWidth { //if the width is too far off the right side of the screen, stop it and bounce back
                         self.offset.current.width = SwipeAction.bounceWidth - self.offset.stored.width //set the current width to the bounce distance minus the stored width to get the totalWidth to be the bounceWidth
                         //If the user drags past the end of the buttons (If the total offset width is past the end of the width of the button options and the previous value was at or before that width)
@@ -155,9 +157,6 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                 let currentWidth = abs(shouldHideCurrentAction ? 0 : (isBeyondSwipeDistance ? self.offset.totalWidth : swipeAction.width * currentRatio))
                 let currentPriorWidths = abs(totalPriorActionWidths * currentRatio * (shouldHideCurrentAction ? 0 : 1))
                 
-//                Text(swipeAction.name)
-//                    .foregroundStyle(.white)
-//                    .padding(.horizontal, SwipeAction.horizontalPadding)
                 swipeAction.label
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(width: currentWidth, alignment: .leading)
@@ -206,7 +205,7 @@ fileprivate struct SwipeActionModifier: ViewModifier {
 }
 
 public extension View {
-#warning("Applying multiple swipe actions only uses the first swipe action modifier used")
+#warning("Applying multiple swipe actions in separate modifiers only uses the first swipe action modifier used")
     
     func addSwipeAction(_ action: SwipeAction, continuationBehavior: SwipeContinuationBehavior = .commit) -> some View {
         self.modifier(SwipeActionModifier(swipeActions: .init(mainAction: action, continuationBehavior: continuationBehavior)))
