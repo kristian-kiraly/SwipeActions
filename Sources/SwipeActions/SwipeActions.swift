@@ -155,11 +155,12 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                 let currentWidth = abs(shouldHideCurrentAction ? 0 : (isBeyondSwipeDistance ? self.offset.totalWidth : swipeAction.width * currentRatio))
                 let currentPriorWidths = abs(totalPriorActionWidths * currentRatio * (shouldHideCurrentAction ? 0 : 1))
                 
-                Text(swipeAction.name)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, SwipeAction.horizontalPadding)
+//                Text(swipeAction.name)
+//                    .foregroundStyle(.white)
+//                    .padding(.horizontal, SwipeAction.horizontalPadding)
+                swipeAction.label
                     .fixedSize(horizontal: true, vertical: false)
-                    .frame(width: currentWidth, alignment: isMainAction && isBeyondSwipeDistance ? .leading : .center)
+                    .frame(width: currentWidth, alignment: .leading)
                     .frame(maxHeight: .infinity, alignment: .center)
                     .background {
                         Rectangle()
@@ -254,26 +255,57 @@ public struct SwipeActionGroup {
 
 public struct SwipeAction: Identifiable {
     public let id = UUID()
-    public var name: String
-    public var action: () -> ()
-    public var backgroundColor: Color
+    public let name: String
+    public let symbol: Image?
+    public let action: () -> ()
+    public let backgroundColor: Color
     
     public static let bounceWidth: CGFloat = 50
     public static let commitWidth: CGFloat = 1000
     public static let horizontalPadding: CGFloat = 17
     
-    public init(name: String, action: @escaping () -> (), backgroundColor: Color) {
+    public init(name: String, symbol: Image? = nil, backgroundColor: Color, action: @escaping () -> ()) {
         self.name = name
         self.action = action
         self.backgroundColor = backgroundColor
+        self.symbol = symbol
     }
     
     public static func DeleteAction(_ action: @escaping () -> ()) -> SwipeAction {
-        SwipeAction(name: "Delete", action: action, backgroundColor: .red)
+        SwipeAction(name: "Delete", symbol: .init(systemName: "trash"), backgroundColor: .red, action: action)
     }
     
     public var width: CGFloat {
         name.renderedWidth + Self.horizontalPadding * 2
+    }
+    
+    @ViewBuilder
+    internal var label: some View {
+        Group {
+            if #available(iOS 16.0, *) {
+                ViewThatFits {
+                    symbolStack
+                    nameLabel
+                }
+            } else {
+                symbolStack
+            }
+        }
+        .padding(.horizontal, SwipeAction.horizontalPadding)
+    }
+    
+    private var nameLabel: some View {
+        Text(name)
+            .foregroundStyle(.white)
+    }
+    
+    private var symbolStack: some View {
+        VStack {
+            if let symbol {
+                symbol
+            }
+            nameLabel
+        }
     }
 }
 
@@ -284,10 +316,8 @@ public struct SwipeAction: Identifiable {
             Text("\(index)")
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .addSwipeActions([.init(name: "Test", action: { print("Test") }, backgroundColor: .blue), .init(name: "Test 2", action: { print ("Test 2") }, backgroundColor: .green)])
-//                .addSwipeActions(deleteAction: .DeleteAction {
-//                    print("Delete")
-//                })
+//                .addSwipeActions([.init(name: "Test", symbol: .init(systemName: "plus"), backgroundColor: .blue, action: { print("Test") }), .init(name: "Test 2", symbol: .init(systemName: "square.fill"), backgroundColor: .green, action: { print ("Test 2") })])
+                .addSwipeActions(deleteAction: .DeleteAction { print("Delete") })
         }
     }
 }
