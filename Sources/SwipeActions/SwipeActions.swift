@@ -25,10 +25,6 @@ fileprivate struct Offset: Equatable {
     var totalWidth: CGFloat {
         current.width + stored.width
     }
-    
-    var totalMagnitude: CGFloat {
-        abs(current.width) + abs(stored.width)
-    }
 }
 
 fileprivate extension String {
