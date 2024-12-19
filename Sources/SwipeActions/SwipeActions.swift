@@ -42,6 +42,7 @@ fileprivate extension String {
 fileprivate struct DragGestureStorage: Equatable {
     var dragOffset: CGSize
     var predictedDragEnd: CGSize
+    var velocity: CGSize
     
     var isDragging: Bool {
         dragOffset != .zero && predictedDragEnd != .zero
@@ -57,7 +58,13 @@ fileprivate enum SwipeDirection {
         //35 - 45 = -10 > right
         //35 - 25 = 10 < left
         //-35 - -45 = 10 < left
-        if oldGestureStorage.dragOffset.width - newGestureStorage.dragOffset.width < 0 {
+        if !newGestureStorage.isDragging {
+            if oldGestureStorage.velocity.width > 0 {
+                self = .right
+            } else {
+                self = .left
+            }
+        } else if oldGestureStorage.dragOffset.width - newGestureStorage.dragOffset.width < 0 {
             self = .right
         } else {
             self = .left
@@ -71,7 +78,7 @@ fileprivate struct SwipeActionModifier: ViewModifier {
     @State private var storedSwipeDirection: SwipeDirection? = nil
     @State private var offset = Offset()
     
-    @GestureState private var gestureState: DragGestureStorage = .init(dragOffset: .zero, predictedDragEnd: .zero)
+    @GestureState private var gestureState: DragGestureStorage = .init(dragOffset: .zero, predictedDragEnd: .zero, velocity: .zero)
     
     func body(content: Content) -> some View {
         content
@@ -84,7 +91,7 @@ fileprivate struct SwipeActionModifier: ViewModifier {
             .gesture(
                 DragGesture(minimumDistance: 10, coordinateSpace: .local)
                     .updating($gestureState, body: { value, state, transaction in
-                        state = .init(dragOffset: value.translation, predictedDragEnd: value.predictedEndTranslation)
+                        state = .init(dragOffset: value.translation, predictedDragEnd: value.predictedEndTranslation, velocity: value.velocity)
                     })
             )
             .onChange(of: gestureState) { [oldValue=gestureState] newValue in
