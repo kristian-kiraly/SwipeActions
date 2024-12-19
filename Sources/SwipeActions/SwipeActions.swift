@@ -395,6 +395,7 @@ public struct SwipeAction: Identifiable {
             Text("\(index)")
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .background { Color.blue }
 //                .addSwipeActions([.init(name: "Test", symbol: .init(systemName: "plus"), backgroundColor: .blue, action: { print("Test") }), .init(name: "Test 2", symbol: .init(systemName: "square.fill"), backgroundColor: .green, action: { print ("Test 2") })])
 //                .addSwipeActions(deleteAction: .DeleteAction { print("Delete") })
                 .addSwipeActions(leftActions: .init(deleteAction: .DeleteAction { }) /*.init(mainAction: .init(name: "Test Left", symbol: .init(systemName: "plus"), backgroundColor: .blue, action: {}), continuationBehavior: .commit)*/, rightActions: .init(mainAction: .DeleteAction { }/*.init(name: "Test Right", symbol: .init(systemName: "clock"), backgroundColor: .green, action: {})*/, otherActions: [/*.init(name: "Test Right 2", symbol: .init(systemName: "square.fill"), backgroundColor: .red, action: {}),*/ .init(name: "Right 3", symbol: .init(systemName: "circle"), backgroundColor: .purple, action: {})], continuationBehavior: .delete))
