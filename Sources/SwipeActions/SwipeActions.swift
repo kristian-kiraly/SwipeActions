@@ -68,7 +68,7 @@ fileprivate enum SwipeDirection {
 fileprivate struct SwipeActionModifier: ViewModifier {
     var rightSwipeActions: SwipeActionGroup? = nil
     var leftSwipeActions: SwipeActionGroup? = nil
-    @State private var swipeDirection: SwipeDirection? = nil
+    @State private var storedSwipeDirection: SwipeDirection? = nil
     @State private var offset = Offset()
     
     @GestureState private var gestureState: DragGestureStorage = .init(dragOffset: .zero, predictedDragEnd: .zero)
@@ -88,121 +88,74 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                     })
             )
             .onChange(of: gestureState) { [oldValue=gestureState] newValue in
-                if swipeDirection == nil {
-                    swipeDirection = .init(oldGestureStorage: oldValue, newGestureStorage: newValue)
+                let currentSwipeDirection = SwipeDirection(oldGestureStorage: oldValue, newGestureStorage: newValue)
+                if storedSwipeDirection == nil {
+                    storedSwipeDirection = currentSwipeDirection
                 }
 //                if case .right = swipeDirection {
 //                    print("Right")
 //                } else {
 //                    print("Left")
 //                }
-                guard let swipeDirection else { return }
-                if newValue.dragOffset == .zero { //Drag stopped
+                guard let storedSwipeDirection else { return }
+                
+                let relevantActionWidth = storedSwipeDirection == .left ? totalRightActionsWidth : totalLeftActionsWidth
+                let relevantActions = storedSwipeDirection == .left ? rightSwipeActions : leftSwipeActions
+                
+                if !newValue.isDragging { //Drag stopped
                     defer {
                         self.offset.current.width = 0
                         if self.offset.totalWidth == 0 {
-                            self.swipeDirection = nil
+                            self.storedSwipeDirection = nil
                         }
                     }
-                    switch swipeDirection {
-                    case .left:
-                        //Right actions
-                        if let rightSwipeActions {
-                            if self.offset.totalWidth < -totalRightActionsWidth + -SwipeAction.bounceWidth {
-                                guard case .stop = rightSwipeActions.continuationBehavior else {
-                                    commitRightSwipeAction(rightSwipeActions.mainAction, byDrag: true)
-                                    return
-                                }
-                            }
-                            if self.offset.totalWidth >= 0 {
+                    
+                    let directionModifier: CGFloat = storedSwipeDirection == .left ? 1 : -1
+                    
+                    //Check if the offset's width (relative to the side the actions are on) is larger than the total width of the actions plus a bounce width padding
+                    //we use a negative direction modifier because if we're swiping left, the offset's totalWidth will be negative and therefore needs to be flipped to compare to the positive widths of actions
+                    
+                    //Check if the swipe goes beyond the bounds of the opposite direction from where it started (should bounce back when going off-screen the wrong way)
+                    if self.offset.totalWidth * directionModifier >= 0 {
+                        self.offset.stored.width = 0
+                        return
+                    }
+                    
+                    //If the user is currently swiping in the direction that would reveal the actions
+                    if currentSwipeDirection == storedSwipeDirection {
+                        if self.offset.totalWidth * -directionModifier > relevantActionWidth + SwipeAction.bounceWidth {
+                            guard let relevantActions else {
                                 self.offset.stored.width = 0
                                 return
                             }
-                            //Code to bounce to individual actions
-//                          var currentPosition: CGFloat = 0
-//                          for swipeAction in swipeActions {
-//                              if self.offset.totalWidth > -(swipeAction.width / 2) - currentPosition {
-//                                  self.offset.stored.width = -currentPosition
-//                                  return
-//                              }
-//                              currentPosition += swipeAction.width
-//                          }
-//                          self.offset.stored.width = -currentPosition
-                            let rightDrag = oldValue.predictedDragEnd.width > oldValue.dragOffset.width
-                            if !rightDrag {
-                                self.offset.stored.width = -totalRightActionsWidth
-                            } else {
-                                self.offset.stored.width = 0
-                            }
-                        } else {
-                            self.offset.stored.width = 0
-                        }
-                    case .right:
-                        if let leftSwipeActions {
-                            if self.offset.totalWidth > totalLeftActionsWidth + SwipeAction.bounceWidth {
-                                guard case .stop = leftSwipeActions.continuationBehavior else {
-                                    commitLeftSwipeAction(leftSwipeActions.mainAction, byDrag: true)
-                                    return
-                                }
-                            }
-                            if self.offset.totalWidth <= 0 {
-                                self.offset.stored.width = 0
+                            guard case .stop = relevantActions.continuationBehavior else {
+                                commitSwipeAction(relevantActions.mainAction, byDrag: true)
                                 return
                             }
-                            let leftDrag = oldValue.predictedDragEnd.width < oldValue.dragOffset.width
-                            if !leftDrag {
-                                self.offset.stored.width = totalLeftActionsWidth
-                            } else {
-                                self.offset.stored.width = 0
-                            }
                         } else {
-                            self.offset.stored.width = 0
+                            self.offset.stored.width = relevantActionWidth * -directionModifier
                         }
+                    } else {
+                        self.offset.stored.width = 0
                     }
                 } else {
                     let oldValue = self.offset
                     self.offset.current = newValue.dragOffset
-                    switch swipeDirection {
-                    case .left:
-                        if let _ = rightSwipeActions {
-                            let totalTargetWidth = -totalRightActionsWidth - SwipeAction.bounceWidth
-                            if self.offset.totalWidth > SwipeAction.bounceWidth { //if the width is too far off the right side of the screen, stop it and bounce back
-                                self.offset.current.width = SwipeAction.bounceWidth - self.offset.stored.width //set the current width to the bounce distance minus the stored width to get the totalWidth to be the bounceWidth
-                                //If the user drags past the end of the buttons (If the total offset width is past the end of the width of the button options and the previous value was at or before that width)
-                                //OR
-                                //If the user drags back to the other side of the buttons (If the total offset width is before the end of the width of the button options and the previous value was at or past that width)
-//                          } else if self.offset.totalWidth < -totalWidth && oldValue.totalWidth >= -totalWidth
-//                                      ||
-//                                      self.offset.totalWidth > -totalWidth && oldValue.totalWidth <= -totalWidth
-//                          {
-//                              let selectionGenerator = UISelectionFeedbackGenerator()
-//                              selectionGenerator.prepare()
-//                              selectionGenerator.selectionChanged()
-                                
-                                //If the user drags past the end of the buttons (If the total offset width is past the end of the width of the button options and the previous value was at or before that width)
-                            } else if abs(self.offset.totalWidth) > abs(totalTargetWidth) && abs(oldValue.totalWidth) <= abs(totalTargetWidth) {
-                                let impactGenerator = UIImpactFeedbackGenerator()
-                                impactGenerator.prepare()
-                                impactGenerator.impactOccurred()
-//                                print("impact")
-                            }
-                        } else {
-                            bounceBackToLimit()
-                        }
-                    case .right:
-                        if let _ = leftSwipeActions {
-                            let totalTargetWidth = totalLeftActionsWidth + SwipeAction.bounceWidth
-                            if self.offset.totalWidth < -SwipeAction.bounceWidth {
-                                self.offset.current.width = -SwipeAction.bounceWidth + self.offset.stored.width
-                            } else if abs(self.offset.totalWidth) > abs(totalTargetWidth) && abs(oldValue.totalWidth) <= abs(totalTargetWidth) {
-                                let impactGenerator = UIImpactFeedbackGenerator()
-                                impactGenerator.prepare()
-                                impactGenerator.impactOccurred()
-//                                print("impact")
-                            }
-                        } else {
-                            bounceBackToLimit()
-                        }
+                    
+                    guard let _ = relevantActions
+                    else {
+                        bounceBackToLimit()
+                        return
+                    }
+                    let totalTargetWidth = relevantActionWidth + SwipeAction.bounceWidth
+                    let directionModifier: CGFloat = storedSwipeDirection == .left ? -1 : 1
+                    if self.offset.totalWidth * -directionModifier > SwipeAction.bounceWidth {
+                        self.offset.current.width = SwipeAction.bounceWidth * -directionModifier + self.offset.stored.width * directionModifier
+                    } else if abs(self.offset.totalWidth) > abs(totalTargetWidth) && abs(oldValue.totalWidth) <= abs(totalTargetWidth) {
+                        let impactGenerator = UIImpactFeedbackGenerator()
+                        impactGenerator.prepare()
+                        impactGenerator.impactOccurred()
+//                        print("impact")
                     }
                 }
             }
@@ -216,89 +169,71 @@ fileprivate struct SwipeActionModifier: ViewModifier {
         }
     }
     
+    private func swipeActionLabelsForActions(_ actions: SwipeActionGroup, actionSide: SwipeDirection, viewSize: CGSize) -> some View {
+        let directionModifier: CGFloat = actionSide == .right ? -1 : 1
+        let relevantWidth = actionSide == .right ? totalRightActionsWidth : totalLeftActionsWidth
+        
+        let currentRatio = self.offset.totalWidth / relevantWidth
+        let isBeyondSwipeDistance = self.offset.totalWidth * directionModifier > relevantWidth + SwipeAction.bounceWidth
+        let distanceBeyondEnd = self.offset.totalWidth * directionModifier - viewSize.width
+        let adjustedEnd = SwipeAction.commitWidth - viewSize.width
+        let percentBeyondDistance = distanceBeyondEnd / adjustedEnd
+        
+        
+        var indices = Array(actions.allActions.indices.reversed())
+        if actionSide == .right {
+            indices = indices.reversed()
+        }
+        
+        return ForEach(Array(indices), id:\.self) { swipeActionIndex in
+            let swipeAction = actions.allActions[swipeActionIndex]
+            let totalPriorActionWidths = actions.allActions.prefix(swipeActionIndex).reduce(0) { $0 + $1.width }
+            
+            let isMainAction = swipeActionIndex == 0
+            let shouldSnapMainAction = actions.continuationBehavior != .stop
+            let shouldHideCurrentAction = (isBeyondSwipeDistance && !isMainAction && shouldSnapMainAction) || storedSwipeDirection == actionSide
+            
+            //if .left (actions on left side), the offset's total width should be a positive number
+            //if .right (actions on right side), the offset's total width should be a negative number
+            let actionHasBeenSwipedAway = actionSide == .left ? self.offset.totalWidth < 0 : self.offset.totalWidth > 0
+            
+            let currentWidth = abs(shouldHideCurrentAction || actionHasBeenSwipedAway ? 0 : (isBeyondSwipeDistance && shouldSnapMainAction ? self.offset.totalWidth : swipeAction.width * currentRatio))
+            let currentPriorWidths = abs(totalPriorActionWidths * currentRatio * (shouldHideCurrentAction ? 0 : 1))
+            
+            let actionWidths = currentPriorWidths + currentWidth / 2
+            
+            let position = actionSide == .right ?
+            viewSize.width - actionWidths
+            :
+            actionWidths
+            
+            swipeAction.label
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(width: currentWidth, alignment: actionSide == .right ? .leading : .trailing)
+                .frame(maxHeight: .infinity, alignment: .center)
+                .background {
+                    Rectangle()
+                        .fill(swipeAction.backgroundColor)
+                        .frame(width: currentWidth)
+                }
+                .clipped()
+                .position(x: position, y: viewSize.height / 2)
+                .onTapGesture {
+                    commitSwipeAction(swipeAction, byDrag: false)
+                }
+                .zIndex(isMainAction ? 1 : 0)
+        }
+        .opacity(percentBeyondDistance > 0 && !gestureState.isDragging ? 1 - percentBeyondDistance : 1)
+    }
+    
     @ViewBuilder
     private var swipeActionButtons: some View {
         GeometryReader { geo in
             if let rightSwipeActions {
-                let isBeyondSwipeDistance = abs(self.offset.totalWidth) > abs(totalRightActionsWidth) + abs(SwipeAction.bounceWidth)
-                let currentRatio = self.offset.totalWidth / totalRightActionsWidth
-                
-                /*
-                 if we want to get the distance between -1000 and the end of the screen, we need to figure out how far past the end of the screen the gesture is
-                 the gesture is past the end of the screen if the total width is greater than the screen size
-                 to get the remainder of the gesture width past the screen size, subtract the width of the screen from the width of the gesture
-                 */
-                let distanceBeyondEnd = abs(self.offset.totalWidth) - geo.size.width
-                let adjustedEnd = SwipeAction.commitWidth - geo.size.width //Need to offset end since we're subtracting the width from the distance
-                let percentBeyondDistance = distanceBeyondEnd / adjustedEnd
-                ForEach(Array(rightSwipeActions.allActions.indices).reversed(), id:\.self) { swipeActionIndex in
-                    let swipeAction = rightSwipeActions.allActions[swipeActionIndex]
-                    let totalPriorActionWidths = rightSwipeActions.allActions.prefix(swipeActionIndex).reduce(0) { $0 + $1.width }
-                    
-                    let isMainAction = swipeActionIndex == 0
-                    let shouldSnapMainAction = rightSwipeActions.continuationBehavior != .stop
-                    let shouldHideCurrentAction = (isBeyondSwipeDistance && !isMainAction && shouldSnapMainAction) || swipeDirection == .right
-                    
-                    let currentWidth = abs(shouldHideCurrentAction ? 0 : (isBeyondSwipeDistance && shouldSnapMainAction ? self.offset.totalWidth : swipeAction.width * currentRatio))
-                    let currentPriorWidths = abs(totalPriorActionWidths * currentRatio * (shouldHideCurrentAction ? 0 : 1))
-                    
-                    swipeAction.label
-                        .fixedSize(horizontal: true, vertical: false)
-                        .frame(width: currentWidth, alignment: .leading)
-                        .frame(maxHeight: .infinity, alignment: .center)
-                        .background {
-                            Rectangle()
-                                .fill(swipeAction.backgroundColor)
-                                .frame(width: currentWidth)
-                        }
-                        .clipped()
-                        .position(x: geo.size.width - currentPriorWidths - currentWidth / 2, y: geo.size.height / 2)
-                        .onTapGesture {
-                            commitRightSwipeAction(swipeAction, byDrag: false)
-                        }
-                }
-                .opacity(percentBeyondDistance > 0 && !gestureState.isDragging ? 1 - percentBeyondDistance : 1)
+                swipeActionLabelsForActions(rightSwipeActions, actionSide: .right, viewSize: geo.size)
             }
             if let leftSwipeActions {
-//                let isBeyondSwipeDistance = self.offset.totalWidth < -totalRightActionsWidth - SwipeAction.bounceWidth
-                let isBeyondSwipeDistance = abs(self.offset.totalWidth) > abs(totalRightActionsWidth) + abs(SwipeAction.bounceWidth)
-                let currentRatio = self.offset.totalWidth / totalLeftActionsWidth
-                
-                /*
-                 if we want to get the distance between -1000 and the end of the screen, we need to figure out how far past the end of the screen the gesture is
-                 the gesture is past the end of the screen if the total width is greater than the screen size
-                 to get the remainder of the gesture width past the screen size, subtract the width of the screen from the width of the gesture
-                 */
-                let distanceBeyondEnd = abs(self.offset.totalWidth) - geo.size.width
-                let adjustedEnd = SwipeAction.commitWidth - geo.size.width
-                let percentBeyondDistance = distanceBeyondEnd / adjustedEnd
-                ForEach(Array(leftSwipeActions.allActions.indices), id:\.self) { swipeActionIndex in
-                    let swipeAction = leftSwipeActions.allActions[swipeActionIndex]
-                    let totalPriorActionWidths = leftSwipeActions.allActions.prefix(swipeActionIndex).reduce(0) { $0 + $1.width }
-                    
-                    let isMainAction = swipeActionIndex == 0
-                    let shouldSnapMainAction = leftSwipeActions.continuationBehavior != .stop
-                    let shouldHideCurrentAction = (isBeyondSwipeDistance && !isMainAction && shouldSnapMainAction) || swipeDirection == .left
-                    
-                    let currentWidth = abs(shouldHideCurrentAction ? 0 : (isBeyondSwipeDistance && shouldSnapMainAction ? self.offset.totalWidth : swipeAction.width * currentRatio))
-                    let currentPriorWidths = abs(totalPriorActionWidths * currentRatio * (shouldHideCurrentAction ? 0 : 1))
-                    
-                    swipeAction.label
-                        .fixedSize(horizontal: true, vertical: false)
-                        .frame(width: currentWidth, alignment: .trailing)
-                        .frame(maxHeight: .infinity, alignment: .center)
-                        .background {
-                            Rectangle()
-                                .fill(swipeAction.backgroundColor)
-                                .frame(width: currentWidth)
-                        }
-                        .clipped()
-                        .position(x: currentPriorWidths + currentWidth / 2, y: geo.size.height / 2)
-                        .onTapGesture {
-                            commitRightSwipeAction(swipeAction, byDrag: false)
-                        }
-                }
-                .opacity(percentBeyondDistance > 0 && !gestureState.isDragging ? 1 - percentBeyondDistance : 1)
+                swipeActionLabelsForActions(leftSwipeActions, actionSide: .left, viewSize: geo.size)
             }
         }
     }
@@ -311,37 +246,23 @@ fileprivate struct SwipeActionModifier: ViewModifier {
         leftSwipeActions?.allActions.reduce(CGFloat()) { $0 + $1.width } ?? 0
     }
     
-    private func commitLeftSwipeAction(_ swipeAction: SwipeAction, byDrag: Bool) {
-        switch leftSwipeActions?.continuationBehavior {
-        case .stop:
-            guard !byDrag else { return }
-            performSwipeAction(swipeAction)
-        case .commit:
-            performSwipeAction(swipeAction)
-        case .delete:
-            self.offset.stored.width = SwipeAction.commitWidth
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                swipeAction.action()
-            }
-        case nil:
-            break
+    private func commitSwipeAction(_ swipeAction: SwipeAction, byDrag: Bool) {
+        guard let storedSwipeDirection,
+              let actionContainer = storedSwipeDirection == .right ? leftSwipeActions : rightSwipeActions
+        else {
+            return
         }
-    }
-    
-    private func commitRightSwipeAction(_ swipeAction: SwipeAction, byDrag: Bool) {
-        switch rightSwipeActions?.continuationBehavior {
-        case .commit:
-            performSwipeAction(swipeAction)
+        switch actionContainer.continuationBehavior {
         case .stop:
             guard !byDrag else { return }
             performSwipeAction(swipeAction)
+        case .commit:
+            performSwipeAction(swipeAction)
         case .delete:
-            self.offset.stored.width = -SwipeAction.commitWidth
+            self.offset.stored.width = SwipeAction.commitWidth * (storedSwipeDirection == .right ? 1 : -1)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 swipeAction.action()
             }
-        case nil:
-            break
         }
     }
     
@@ -378,12 +299,7 @@ public extension View {
     }
     
     func addSwipeActions(leftActions: SwipeActionGroup? = nil, rightActions: SwipeActionGroup? = nil) -> some View {
-//        if let rightActions {
-//            let rightActions = SwipeActionGroup(mainAction: rightActions.mainAction, otherActions: rightActions.allActions.suffix(from: 1).reversed(), continuationBehavior: rightActions.continuationBehavior)
-//            return self.modifier(SwipeActionModifier(rightSwipeActions: rightActions, leftSwipeActions: leftActions))
-//        } else {
-            return self.modifier(SwipeActionModifier(rightSwipeActions: rightActions, leftSwipeActions: leftActions))
-//        }
+        return self.modifier(SwipeActionModifier(rightSwipeActions: rightActions, leftSwipeActions: leftActions))
     }
 }
 
