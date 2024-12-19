@@ -266,6 +266,10 @@ fileprivate struct SwipeActionModifier: ViewModifier {
         case .commit:
             performSwipeAction(swipeAction)
         case .delete:
+            guard swipeAction == actionContainer.mainAction else {
+                performSwipeAction(swipeAction)
+                return
+            }
             self.offset.stored.width = SwipeAction.commitWidth * (storedSwipeDirection == .right ? 1 : -1)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 swipeAction.action()
@@ -332,7 +336,11 @@ public struct SwipeActionGroup {
     }
 }
 
-public struct SwipeAction: Identifiable {
+public struct SwipeAction: Identifiable, Equatable {
+    public static func == (lhs: SwipeAction, rhs: SwipeAction) -> Bool {
+        lhs.id == rhs.id
+    }
+    
     public let id = UUID()
     public let name: String
     public let symbol: Image?
