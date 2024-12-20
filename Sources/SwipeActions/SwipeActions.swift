@@ -196,7 +196,7 @@ fileprivate struct SwipeActionModifier: ViewModifier {
             let impactGenerator = UIImpactFeedbackGenerator()
             impactGenerator.prepare()
             impactGenerator.impactOccurred()
-            print("Impact")
+//            print("Impact")
         }
     }
     
