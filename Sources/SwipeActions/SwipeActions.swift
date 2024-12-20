@@ -88,8 +88,8 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                 swipeActionButtons
             }
             .animation(.default, value: offset)
-            .gesture(
-                DragGesture(minimumDistance: 10, coordinateSpace: .local)
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 25, coordinateSpace: .local)
                     .updating($gestureState, body: { value, state, transaction in
                         state = .init(dragOffset: value.translation, predictedDragEnd: value.predictedEndTranslation, velocity: value.velocity)
                     })
@@ -325,12 +325,15 @@ fileprivate struct SwipeActionModifier: ViewModifier {
 public extension View {
 #warning("Applying multiple swipe actions in separate modifiers only uses the first swipe action modifier used")
     
-    func addSwipeAction(_ action: SwipeAction, continuationBehavior: SwipeContinuationBehavior = .commit) -> some View {
-        self.modifier(SwipeActionModifier(rightSwipeActions: .init(mainAction: action, continuationBehavior: continuationBehavior)))
+    func addSwipeAction(_ action: SwipeAction, continuationBehavior: SwipeContinuationBehavior? = nil) -> some View {
+        let continuationBehavior = continuationBehavior ?? (action.id == SwipeAction.deleteId ? .delete : .commit)
+        return self.modifier(SwipeActionModifier(rightSwipeActions: .init(mainAction: action, continuationBehavior: continuationBehavior)))
     }
     
     @ViewBuilder
-    func addSwipeActions(_ actions: [SwipeAction], continuationBehavior: SwipeContinuationBehavior = .commit) -> some View {
+    func addSwipeActions(_ actions: [SwipeAction], continuationBehavior: SwipeContinuationBehavior? = nil) -> some View {
+        let deleteActionIsInActions = actions.contains { $0.id == SwipeAction.deleteId }
+        let continuationBehavior = continuationBehavior ?? (deleteActionIsInActions ? .delete : .commit)
         if let firstAction = actions.first {
             let remainingActions = Array(actions.suffix(from: 1))
             self.modifier(SwipeActionModifier(rightSwipeActions: .init(mainAction: firstAction, otherActions: remainingActions, continuationBehavior: continuationBehavior)))
@@ -383,7 +386,7 @@ public struct SwipeAction: Identifiable, Equatable {
         lhs.id == rhs.id
     }
     
-    public let id = UUID()
+    public let id: UUID
     public let name: String
     public let symbol: Image?
     public let action: () -> ()
@@ -393,15 +396,22 @@ public struct SwipeAction: Identifiable, Equatable {
     public static let commitWidth: CGFloat = 1000
     public static let horizontalPadding: CGFloat = 17
     
-    public init(name: String, symbol: Image? = nil, backgroundColor: Color, action: @escaping () -> ()) {
+    public static let deleteId = UUID(uuidString: "Delete")
+    
+    private init(name: String, id: UUID?, symbol: Image? = nil, backgroundColor: Color, action: @escaping () -> ()) {
         self.name = name
+        self.id = id ?? UUID()
         self.action = action
         self.backgroundColor = backgroundColor
         self.symbol = symbol
     }
     
+    public init(name: String, symbol: Image? = nil, backgroundColor: Color, action: @escaping () -> ()) {
+        self.init(name: name, id: nil, symbol: symbol, backgroundColor: backgroundColor, action: action)
+    }
+    
     public static func DeleteAction(_ action: @escaping () -> ()) -> SwipeAction {
-        SwipeAction(name: "Delete", symbol: .init(systemName: "trash"), backgroundColor: .red, action: action)
+        SwipeAction(name: "Delete", id: deleteId, symbol: .init(systemName: "trash"), backgroundColor: .red, action: action)
     }
     
     public var width: CGFloat {
@@ -440,15 +450,18 @@ public struct SwipeAction: Identifiable, Equatable {
 
 
 #Preview {
-    VStack(spacing: 0) {
-        ForEach(0..<10, id: \.self) { index in
-            Text("\(index)")
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background { Color.blue }
-//                .addSwipeActions([.init(name: "Test", symbol: .init(systemName: "plus"), backgroundColor: .blue, action: { print("Test") }), .init(name: "Test 2", symbol: .init(systemName: "square.fill"), backgroundColor: .green, action: { print ("Test 2") })])
-//                .addSwipeActions(deleteAction: .DeleteAction { print("Delete") })
-                .addSwipeActions(leftActions: .init(deleteAction: .DeleteAction { }) /*.init(mainAction: .init(name: "Test Left", symbol: .init(systemName: "plus"), backgroundColor: .blue, action: {}), continuationBehavior: .commit)*/, rightActions: .init(mainAction: .DeleteAction { }/*.init(name: "Test Right", symbol: .init(systemName: "clock"), backgroundColor: .green, action: {})*/, otherActions: [.init(name: "Right 2", symbol: .init(systemName: "square.fill"), backgroundColor: .orange, action: {}), .init(name: "Right 3", symbol: .init(systemName: "circle"), backgroundColor: .purple, action: {})], continuationBehavior: .delete))
+    ScrollView {
+        VStack(spacing: 0) {
+            ForEach(0..<10, id: \.self) { index in
+                Text("\(index)")
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background { Color.blue }
+                //                .addSwipeActions([.init(name: "Test", symbol: .init(systemName: "plus"), backgroundColor: .blue, action: { print("Test") }), .init(name: "Test 2", symbol: .init(systemName: "square.fill"), backgroundColor: .green, action: { print ("Test 2") })])
+                //                .addSwipeActions(deleteAction: .DeleteAction { print("Delete") })
+                    .addSwipeActions(leftActions: .init(deleteAction: .DeleteAction { }) /*.init(mainAction: .init(name: "Test Left", symbol: .init(systemName: "plus"), backgroundColor: .blue, action: {}), continuationBehavior: .commit)*/, rightActions: .init(mainAction: .DeleteAction { }/*.init(name: "Test Right", symbol: .init(systemName: "clock"), backgroundColor: .green, action: {})*/, otherActions: [.init(name: "Right 2", symbol: .init(systemName: "square.fill"), backgroundColor: .orange, action: {}), .init(name: "Right 3", symbol: .init(systemName: "circle"), backgroundColor: .purple, action: {})], continuationBehavior: .delete))
+            }
         }
+        .padding()
     }
 }
