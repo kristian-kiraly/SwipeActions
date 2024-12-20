@@ -95,77 +95,123 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                     })
             )
             .onChange(of: gestureState) { [oldValue=gestureState] newValue in
-                let currentSwipeDirection = SwipeDirection(oldGestureStorage: oldValue, newGestureStorage: newValue)
-                if storedSwipeDirection == nil {
-                    storedSwipeDirection = currentSwipeDirection
-                }
-//                if case .right = swipeDirection {
-//                    print("Right")
-//                } else {
-//                    print("Left")
-//                }
-                guard let storedSwipeDirection else { return }
-                
-                let relevantActionWidth = storedSwipeDirection == .left ? totalRightActionsWidth : totalLeftActionsWidth
-                let relevantActions = storedSwipeDirection == .left ? rightSwipeActions : leftSwipeActions
-                
-                if !newValue.isDragging { //Drag stopped
-                    defer {
-                        self.offset.current.width = 0
-                        if self.offset.totalWidth == 0 {
-                            self.storedSwipeDirection = nil
-                        }
-                    }
-                    
-                    let directionModifier: CGFloat = storedSwipeDirection == .left ? 1 : -1
-                    
-                    //Check if the offset's width (relative to the side the actions are on) is larger than the total width of the actions plus a bounce width padding
-                    //we use a negative direction modifier because if we're swiping left, the offset's totalWidth will be negative and therefore needs to be flipped to compare to the positive widths of actions
-                    
-                    //Check if the swipe goes beyond the bounds of the opposite direction from where it started (should bounce back when going off-screen the wrong way)
-                    if self.offset.totalWidth * directionModifier >= 0 {
-                        self.offset.stored.width = 0
-                        return
-                    }
-                    
-                    //If the user is currently swiping in the direction that would reveal the actions
-                    if currentSwipeDirection == storedSwipeDirection {
-                        if self.offset.totalWidth * -directionModifier > relevantActionWidth + SwipeAction.bounceWidth {
-                            guard let relevantActions else {
-                                self.offset.stored.width = 0
-                                return
-                            }
-                            guard case .stop = relevantActions.continuationBehavior else {
-                                commitSwipeAction(relevantActions.mainAction, byDrag: true)
-                                return
-                            }
-                        } else {
-                            self.offset.stored.width = relevantActionWidth * -directionModifier
-                        }
-                    } else {
-                        self.offset.stored.width = 0
-                    }
-                } else {
-                    let oldValue = self.offset
-                    self.offset.current = newValue.dragOffset
-                    
-                    guard let _ = relevantActions
-                    else {
-                        bounceBackToLimit()
-                        return
-                    }
-                    let totalTargetWidth = relevantActionWidth + SwipeAction.bounceWidth
-                    let directionModifier: CGFloat = storedSwipeDirection == .left ? -1 : 1
-                    if self.offset.totalWidth * -directionModifier > SwipeAction.bounceWidth {
-                        self.offset.current.width = SwipeAction.bounceWidth * -directionModifier + self.offset.stored.width * directionModifier
-                    } else if abs(self.offset.totalWidth) > abs(totalTargetWidth) && abs(oldValue.totalWidth) <= abs(totalTargetWidth) {
-                        let impactGenerator = UIImpactFeedbackGenerator()
-                        impactGenerator.prepare()
-                        impactGenerator.impactOccurred()
-//                        print("impact")
-                    }
-                }
+                processGestureUpdate(oldValue: oldValue, newValue: newValue)
             }
+    }
+    
+    private var relevantActions: SwipeActionGroup? {
+        switch storedSwipeDirection {
+        case .left:
+            rightSwipeActions
+        case .right:
+            leftSwipeActions
+        case nil:
+            nil
+        }
+    }
+    
+    private func relevantWidth(_ group: SwipeActionGroup?) -> CGFloat {
+        group?.totalWidth ?? 0
+    }
+    
+    private var relevantActionWidth: CGFloat {
+        relevantActions?.totalWidth ?? 0
+    }
+    
+    private func directionModifier(_ direction: SwipeDirection?) -> CGFloat {
+        direction == .left ? 1 : -1
+    }
+    
+    private var directionModifier: CGFloat {
+        directionModifier(storedSwipeDirection)
+    }
+    
+    private var gestureDragWillCommitGesture: Bool {
+        self.offset.totalWidth * -directionModifier > relevantActionWidth + SwipeAction.bounceWidth
+    }
+    
+    private func processFinishedDragGesture(storedSwipeDirection: SwipeDirection, currentSwipeDirection: SwipeDirection) {
+        defer {
+            //Set the current drag amount to zero
+            self.offset.current.width = 0
+            if self.offset.totalWidth == 0 { //If there's no stored drag amount after zeroing the current amount, reset the direction
+                self.storedSwipeDirection = nil
+            }
+        }
+        
+        //Check if the offset's width (relative to the side the actions are on) is larger than the total width of the actions plus a bounce width padding
+        //we use a negative direction modifier because if we're swiping left, the offset's totalWidth will be negative and therefore needs to be flipped to compare to the positive widths of actions
+        
+        //Check if the swipe goes beyond the bounds of the opposite direction from where it started (should bounce back when going off-screen the wrong way)
+        if self.offset.totalWidth * directionModifier >= 0 {
+            self.offset.stored.width = 0
+            return
+        }
+        
+        //If the user is currently swiping in the direction that would reveal the actions
+        if currentSwipeDirection == storedSwipeDirection {
+            //If the gesture's width (in the direction of the currently revealed actions) exceeds the total expected width...
+            //(If we do abs() instead of just flipping the positivity for one direction, it allows the full swipe behavior when a user drags back past zero)
+            if /*self.offset.totalWidth * -directionModifier > relevantActionWidth + SwipeAction.bounceWidth*/gestureDragWillCommitGesture {
+                guard let relevantActions else {
+                    //If there are no actions to complete, just set the stored amount to zero to reset the gesture
+                    self.offset.stored.width = 0
+                    return
+                }
+                guard case .stop = relevantActions.continuationBehavior else {
+                    //If the behavior is either .commit or .delete, perform that action's swipe behavior and exit
+                    commitSwipeAction(relevantActions.mainAction, byDrag: true)
+                    return
+                }
+                //If the behavior is .stop, do not perform the behavior and simply set the current drag to zero
+            } else {
+                //If the drag does not go beyond the expected width (in the correct direction), then bounce back to the width of the actions
+                self.offset.stored.width = relevantActionWidth * -directionModifier
+            }
+        } else {
+            //The user swiped back in the opposite direction, close the actions drawer
+            self.offset.stored.width = 0
+        }
+    }
+    
+    private func processInProgressDragGesture(currentDrag: DragGestureStorage) {
+        let oldValue = self.offset
+        self.offset.current = currentDrag.dragOffset
+        
+        guard let _ = relevantActions
+        else {
+            bounceBackToLimit()
+            return
+        }
+        let totalTargetWidth = relevantActionWidth + SwipeAction.bounceWidth
+        
+        let dragWasBeforeCommitDistance = abs(oldValue.totalWidth) <= totalTargetWidth
+        
+        if self.offset.totalWidth * directionModifier > SwipeAction.bounceWidth {
+            //If the user is dragging in the opposite direction from revealing actions, limit the amount they can drag
+            self.offset.current.width = SwipeAction.bounceWidth * directionModifier + self.offset.stored.width * -directionModifier
+            //} else if abs(self.offset.totalWidth) > abs(totalTargetWidth) && abs(oldValue.totalWidth) <= abs(totalTargetWidth) {
+        } else if gestureDragWillCommitGesture && dragWasBeforeCommitDistance {
+            //If the user is dragging to the point that the action will be performed, give haptic feedback
+            let impactGenerator = UIImpactFeedbackGenerator()
+            impactGenerator.prepare()
+            impactGenerator.impactOccurred()
+            print("Impact")
+        }
+    }
+    
+    private func processGestureUpdate(oldValue: DragGestureStorage, newValue: DragGestureStorage) {
+        let currentSwipeDirection = SwipeDirection(oldGestureStorage: oldValue, newGestureStorage: newValue)
+        if storedSwipeDirection == nil {
+            storedSwipeDirection = currentSwipeDirection
+        }
+        guard let storedSwipeDirection else { return }
+        
+        if !newValue.isDragging {
+            processFinishedDragGesture(storedSwipeDirection: storedSwipeDirection, currentSwipeDirection: currentSwipeDirection)
+        } else {
+            processInProgressDragGesture(currentDrag: newValue)
+        }
     }
     
     private func bounceBackToLimit() {
@@ -177,8 +223,8 @@ fileprivate struct SwipeActionModifier: ViewModifier {
     }
     
     private func swipeActionLabelsForActions(_ actions: SwipeActionGroup, actionSide: SwipeDirection, viewSize: CGSize) -> some View {
-        let directionModifier: CGFloat = actionSide == .right ? -1 : 1
-        let relevantWidth = actionSide == .right ? totalRightActionsWidth : totalLeftActionsWidth
+        let directionModifier = directionModifier(actionSide)
+        let relevantWidth = relevantWidth(actions)
         
         let currentRatio = self.offset.totalWidth / relevantWidth
         let isBeyondSwipeDistance = self.offset.totalWidth * directionModifier > relevantWidth + SwipeAction.bounceWidth
@@ -243,14 +289,6 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                 swipeActionLabelsForActions(leftSwipeActions, actionSide: .left, viewSize: geo.size)
             }
         }
-    }
-    
-    private var totalRightActionsWidth: CGFloat {
-        rightSwipeActions?.allActions.reduce(CGFloat()) { $0 + $1.width } ?? 0
-    }
-    
-    private var totalLeftActionsWidth: CGFloat {
-        leftSwipeActions?.allActions.reduce(CGFloat()) { $0 + $1.width } ?? 0
     }
     
     private func commitSwipeAction(_ swipeAction: SwipeAction, byDrag: Bool) {
@@ -334,6 +372,10 @@ public struct SwipeActionGroup {
     init(deleteAction: SwipeAction, otherActions: [SwipeAction] = []) {
         self.init(mainAction: deleteAction, otherActions: otherActions, continuationBehavior: .delete)
     }
+    
+    fileprivate var totalWidth: CGFloat {
+        allActions.reduce(0) { $0 + $1.width }
+    }
 }
 
 public struct SwipeAction: Identifiable, Equatable {
@@ -406,7 +448,7 @@ public struct SwipeAction: Identifiable, Equatable {
                 .background { Color.blue }
 //                .addSwipeActions([.init(name: "Test", symbol: .init(systemName: "plus"), backgroundColor: .blue, action: { print("Test") }), .init(name: "Test 2", symbol: .init(systemName: "square.fill"), backgroundColor: .green, action: { print ("Test 2") })])
 //                .addSwipeActions(deleteAction: .DeleteAction { print("Delete") })
-                .addSwipeActions(leftActions: .init(deleteAction: .DeleteAction { }) /*.init(mainAction: .init(name: "Test Left", symbol: .init(systemName: "plus"), backgroundColor: .blue, action: {}), continuationBehavior: .commit)*/, rightActions: .init(mainAction: .DeleteAction { }/*.init(name: "Test Right", symbol: .init(systemName: "clock"), backgroundColor: .green, action: {})*/, otherActions: [/*.init(name: "Test Right 2", symbol: .init(systemName: "square.fill"), backgroundColor: .red, action: {}),*/ .init(name: "Right 3", symbol: .init(systemName: "circle"), backgroundColor: .purple, action: {})], continuationBehavior: .delete))
+                .addSwipeActions(leftActions: .init(deleteAction: .DeleteAction { }) /*.init(mainAction: .init(name: "Test Left", symbol: .init(systemName: "plus"), backgroundColor: .blue, action: {}), continuationBehavior: .commit)*/, rightActions: .init(mainAction: .DeleteAction { }/*.init(name: "Test Right", symbol: .init(systemName: "clock"), backgroundColor: .green, action: {})*/, otherActions: [.init(name: "Right 2", symbol: .init(systemName: "square.fill"), backgroundColor: .orange, action: {}), .init(name: "Right 3", symbol: .init(systemName: "circle"), backgroundColor: .purple, action: {})], continuationBehavior: .delete))
         }
     }
 }
