@@ -366,13 +366,13 @@ public struct SwipeActionGroup {
     public let allActions: [SwipeAction]
     public let continuationBehavior: SwipeContinuationBehavior
     
-    init(mainAction: SwipeAction, otherActions: [SwipeAction] = [], continuationBehavior: SwipeContinuationBehavior = .stop) {
+    public init(mainAction: SwipeAction, otherActions: [SwipeAction] = [], continuationBehavior: SwipeContinuationBehavior = .stop) {
         self.mainAction = mainAction
         self.allActions = [mainAction] + otherActions
         self.continuationBehavior = continuationBehavior
     }
     
-    init(deleteAction: SwipeAction, otherActions: [SwipeAction] = []) {
+    public init(deleteAction: SwipeAction, otherActions: [SwipeAction] = []) {
         self.init(mainAction: deleteAction, otherActions: otherActions, continuationBehavior: .delete)
     }
     
