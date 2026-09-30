@@ -72,6 +72,16 @@ fileprivate enum SwipeDirection {
     }
 }
 
+/// Published by rows using swipe actions. True while any swipe-actions drawer
+/// is open. Containers (e.g. CustomList) can read it to adapt, for example by
+/// suspending reorder drags while a drawer is showing.
+public struct SwipeActionsDrawerOpenPreferenceKey: PreferenceKey {
+    public static var defaultValue: Bool { false }
+    public static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
 fileprivate struct SwipeActionModifier: ViewModifier {
     var rightSwipeActions: SwipeActionGroup? = nil
     var leftSwipeActions: SwipeActionGroup? = nil
@@ -101,6 +111,23 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                         state = .init(dragOffset: value.translation, predictedDragEnd: value.predictedEndTranslation, velocity: value.velocity)
                     })
             )
+            // Tapping the cell while its drawer is open dismisses the drawer
+            // instead of activating the cell. Inactive when the drawer is closed,
+            // so normal taps pass through untouched.
+            .highPriorityGesture(
+                TapGesture()
+                    .onEnded {
+                        // Don't interrupt a full-swipe commit already in flight.
+                        guard abs(offset.stored.width) < SwipeAction.commitWidth else { return }
+                        offset.stored.width = 0
+                        if offset.totalWidth == 0 {
+                            storedSwipeDirection = nil
+                        }
+                    },
+                including: offset.stored.width != 0 ? .all : .none
+            )
+            // Publish drawer state for containers (e.g. CustomList).
+            .preference(key: SwipeActionsDrawerOpenPreferenceKey.self, value: offset.stored.width != 0)
             .onChange(of: gestureState) { [oldValue=gestureState] newValue in
                 processGestureUpdate(oldValue: oldValue, newValue: newValue)
             }
