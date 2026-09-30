@@ -84,7 +84,7 @@ fileprivate struct SwipeActionModifier: ViewModifier {
         content
             .contentShape(Rectangle())
             .offset(x: offset.totalWidth)
-            \.background \{
+            .background {
                 swipeActionButtons
             }
             .animation(.default, value: offset)
