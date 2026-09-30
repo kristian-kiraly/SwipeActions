@@ -88,9 +88,16 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                 swipeActionButtons
             }
             .animation(.default, value: offset)
-            .highPriorityGesture(
+            // Default (not high) priority so this drag arbitrates with an enclosing
+            // ScrollView by direction: vertical drags scroll, horizontal drags
+            // reveal the swipe actions. .highPriorityGesture unconditionally
+            // steals vertical drags and breaks scrolling.
+            .gesture(
                 DragGesture(minimumDistance: 25, coordinateSpace: .local)
                     .updating($gestureState, body: { value, state, transaction in
+                        // Only track horizontal-dominant drags so a vertical
+                        // scroll attempt never offsets the cell.
+                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
                         state = .init(dragOffset: value.translation, predictedDragEnd: value.predictedEndTranslation, velocity: value.velocity)
                     })
             )
