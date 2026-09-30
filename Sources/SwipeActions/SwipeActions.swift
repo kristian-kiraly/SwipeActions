@@ -93,6 +93,30 @@ fileprivate struct SwipeActionModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contentShape(Rectangle())
+            // While the drawer is open, a transparent overlay catches taps on
+            // the cell so they dismiss the drawer instead of reaching the
+            // cell's controls (a gesture alone can't preempt e.g. text-field
+            // focus, and a high-priority gesture would also swallow the
+            // drawer's own action buttons). It also swallows long-presses so
+            // a reorder drag can't lift the row with its drawer showing.
+            // Placed before .offset so it moves with the content and never
+            // covers the revealed action buttons. No overlay while closed,
+            // so taps, drags and scrolling pass through untouched.
+            .overlay {
+                if offset.stored.width != 0 {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            // Don't interrupt a full-swipe commit already in flight.
+                            guard abs(offset.stored.width) < SwipeAction.commitWidth else { return }
+                            offset.stored.width = 0
+                            if offset.totalWidth == 0 {
+                                storedSwipeDirection = nil
+                            }
+                        }
+                        .onLongPressGesture(minimumDuration: 0.25) { }
+                }
+            }
             .offset(x: offset.totalWidth)
             .background {
                 swipeActionButtons
@@ -110,21 +134,6 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                         guard abs(value.translation.width) > abs(value.translation.height) else { return }
                         state = .init(dragOffset: value.translation, predictedDragEnd: value.predictedEndTranslation, velocity: value.velocity)
                     })
-            )
-            // Tapping the cell while its drawer is open dismisses the drawer
-            // instead of activating the cell. Inactive when the drawer is closed,
-            // so normal taps pass through untouched.
-            .highPriorityGesture(
-                TapGesture()
-                    .onEnded {
-                        // Don't interrupt a full-swipe commit already in flight.
-                        guard abs(offset.stored.width) < SwipeAction.commitWidth else { return }
-                        offset.stored.width = 0
-                        if offset.totalWidth == 0 {
-                            storedSwipeDirection = nil
-                        }
-                    },
-                including: offset.stored.width != 0 ? .all : .none
             )
             // Publish drawer state for containers (e.g. CustomList).
             .preference(key: SwipeActionsDrawerOpenPreferenceKey.self, value: offset.stored.width != 0)
