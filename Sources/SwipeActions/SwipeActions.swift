@@ -463,7 +463,7 @@ public struct SwipeAction: Identifiable, Equatable {
     public static let commitWidth: CGFloat = 1000
     public static let horizontalPadding: CGFloat = 17
     
-    public static let deleteId = UUID(uuidString: "Delete")
+    public static let deleteId: UUID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
     
     private init(name: String, id: UUID?, symbol: Image? = nil, backgroundColor: Color, action: @escaping () -> ()) {
         self.name = name
