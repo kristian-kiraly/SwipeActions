@@ -109,9 +109,11 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                         .onTapGesture {
                             // Don't interrupt a full-swipe commit already in flight.
                             guard abs(offset.stored.width) < SwipeAction.commitWidth else { return }
-                            offset.stored.width = 0
-                            if offset.totalWidth == 0 {
-                                storedSwipeDirection = nil
+                            withAnimation(.default) {
+                                offset.stored.width = 0
+                                if offset.totalWidth == 0 {
+                                    storedSwipeDirection = nil
+                                }
                             }
                         }
                         // High-priority so it preempts the row's reorder drag
@@ -128,7 +130,12 @@ fileprivate struct SwipeActionModifier: ViewModifier {
             .background {
                 swipeActionButtons
             }
-            .animation(.default, value: offset)
+            // Note: no implicit .animation(_:value:) here. The drag tracks the
+            // finger directly (offset.current changes are not animated), and
+            // drawer open/close/commit animations are applied explicitly with
+            // withAnimation at each stored.width change site, dispatched async
+            // where needed to escape the drag gesture's transaction (which
+            // disables animations).
             // Default (not high) priority so this drag arbitrates with an enclosing
             // ScrollView by direction: vertical drags scroll, horizontal drags
             // reveal the swipe actions. .highPriorityGesture unconditionally
@@ -258,7 +265,13 @@ fileprivate struct SwipeActionModifier: ViewModifier {
         guard let storedSwipeDirection else { return }
         
         if !newValue.isDragging {
-            processFinishedDragGesture(storedSwipeDirection: storedSwipeDirection, currentSwipeDirection: currentSwipeDirection)
+            // Dispatch async so the snap-open/close runs outside the drag
+            // gesture's transaction (which disables animations).
+            DispatchQueue.main.async {
+                withAnimation(.default) {
+                    self.processFinishedDragGesture(storedSwipeDirection: storedSwipeDirection, currentSwipeDirection: currentSwipeDirection)
+                }
+            }
         } else {
             processInProgressDragGesture(currentDrag: newValue)
         }
@@ -358,13 +371,9 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                 performSwipeAction(swipeAction)
                 return
             }
-            // Dispatch async so the fly-off runs outside the drag gesture's
-            // transaction (which disables animations) and explicitly animate it.
-            DispatchQueue.main.async {
-                withAnimation(.default) {
-                    self.offset.stored.width = SwipeAction.commitWidth * (storedSwipeDirection == .right ? 1 : -1)
-                }
-            }
+            // The caller (processGestureUpdate) already dispatches async with
+            // withAnimation to escape the drag gesture's transaction.
+            self.offset.stored.width = SwipeAction.commitWidth * (storedSwipeDirection == .right ? 1 : -1)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 swipeAction.action()
             }
@@ -373,7 +382,9 @@ fileprivate struct SwipeActionModifier: ViewModifier {
     
     private func performSwipeAction(_ swipeAction: SwipeAction) {
         self.offset.current = .zero
-        self.offset.stored.width = 0
+        withAnimation(.default) {
+            self.offset.stored.width = 0
+        }
         swipeAction.action()
     }
 }
