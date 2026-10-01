@@ -114,7 +114,14 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                                 storedSwipeDirection = nil
                             }
                         }
-                        .onLongPressGesture(minimumDuration: 0.25) { }
+                        // High-priority so it preempts the row's reorder drag
+                        // (a plain long-press doesn't reliably suppress
+                        // UIDragInteraction). Fails on movement, so scrolling
+                        // still works.
+                        .highPriorityGesture(
+                            LongPressGesture(minimumDuration: 0.25).onEnded { _ in },
+                            including: .all
+                        )
                 }
             }
             .offset(x: offset.totalWidth)
@@ -351,7 +358,13 @@ fileprivate struct SwipeActionModifier: ViewModifier {
                 performSwipeAction(swipeAction)
                 return
             }
-            self.offset.stored.width = SwipeAction.commitWidth * (storedSwipeDirection == .right ? 1 : -1)
+            // Dispatch async so the fly-off runs outside the drag gesture's
+            // transaction (which disables animations) and explicitly animate it.
+            DispatchQueue.main.async {
+                withAnimation(.default) {
+                    self.offset.stored.width = SwipeAction.commitWidth * (storedSwipeDirection == .right ? 1 : -1)
+                }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 swipeAction.action()
             }
